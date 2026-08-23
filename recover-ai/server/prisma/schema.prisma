@@ -1,0 +1,249 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("ADMIN") // ADMIN, FINANCE_MANAGER, OPERATOR
+  merchantId   String
+  merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Merchant {
+  id                    String          @id @default(uuid())
+  name                  String
+  currency              String          @default("INR")
+  mode                  String          @default("DEMO") // DEMO, TEST, LIVE
+  razorpayKeyId         String?
+  razorpayKeySecret     String?
+  razorpayWebhookSecret String?
+  agentAutonomyMode     String          @default("COPILOT") // COPILOT, AUTOPILOT
+  agentStatus           String          @default("ACTIVE") // ACTIVE, PAUSED
+  users                 User[]
+  customers             Customer[]
+  transactions          Transaction[]
+  payments              Payment[]
+  paymentLinks          PaymentLink[]
+  recoveryCases         RecoveryCase[]
+  campaigns             Campaign[]
+  webhookEvents         WebhookEvent[]
+  agentActivities       AgentActivity[]
+  auditLogs             AuditLog[]
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+model Customer {
+  id                  String          @id @default(uuid())
+  merchantId          String
+  merchant            Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name                String
+  email               String
+  phone               String
+  customerSince       DateTime        @default(now())
+  cltvPaise           Int             @default(0) // Lifetime value in paise
+  totalTransactions   Int             @default(0)
+  successfulPayments  Int             @default(0)
+  failedPayments      Int             @default(0)
+  avgTransactionPaise Int             @default(0)
+  lastPaymentDate     DateTime?
+  transactions        Transaction[]
+  payments            Payment[]
+  paymentLinks        PaymentLink[]
+  recoveryCases       RecoveryCase[]
+  messages            Message[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
+
+model Transaction {
+  id                String         @id @default(uuid())
+  merchantId        String
+  merchant          Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customerId        String
+  customer          Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  razorpayPaymentId String?
+  razorpayOrderId   String?
+  amountPaise       Int
+  currency          String         @default("INR")
+  status            String         // SUCCESS, FAILED, PENDING, EXPIRED, ABANDONED, PARTIAL
+  failureReason     String?        // INSUFFICIENT_FUNDS, BANK_DECLINE, TECHNICAL_FAILURE, AUTH_FAILURE, EXPIRED_LINK, CUSTOMER_ABANDONED, UNKNOWN
+  paymentMethod     String?        // UPI, CARD, NETBANKING, WALLET
+  description       String?
+  payments          Payment[]
+  recoveryCases     RecoveryCase[]
+  webhookEvents     WebhookEvent[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+model Payment {
+  id                String      @id @default(uuid())
+  merchantId        String
+  merchant          Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customerId        String
+  customer          Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  transactionId     String?
+  transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  razorpayPaymentId String      @unique
+  amountPaise       Int
+  status            String      // CAPTURED, AUTHORIZED, FAILED, REFUNDED
+  method            String?
+  bank              String?
+  wallet            String?
+  vpa               String?
+  errorCode         String?
+  errorDescription  String?
+  createdAt         DateTime    @default(now())
+}
+
+model PaymentLink {
+  id                   String        @id @default(uuid())
+  merchantId           String
+  merchant             Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customerId           String
+  customer             Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  razorpayPaymentLinkId String       @unique
+  shortUrl             String
+  amountPaise          Int
+  amountPaidPaise      Int           @default(0)
+  status               String        // CREATED, PAID, PARTIALLY_PAID, EXPIRED, CANCELLED
+  description          String?
+  referenceId          String?
+  expiresAt            DateTime?
+  reminderEnabled      Boolean       @default(true)
+  recoveryCases        RecoveryCase[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
+
+model RecoveryCase {
+  id                     String           @id @default(uuid())
+  merchantId             String
+  merchant               Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customerId             String
+  customer               Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  transactionId          String?
+  transaction            Transaction?     @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  paymentLinkId          String?
+  paymentLink            PaymentLink?     @relation(fields: [paymentLinkId], references: [id], onDelete: SetNull)
+  status                 String           // DETECTED, ANALYZED, PENDING_APPROVAL, EXECUTED, RECOVERED, REJECTED, EXPIRED, LOW_PRIORITY
+  riskLevel              String           // CRITICAL, HIGH, MEDIUM, LOW
+  recoveryScore          Int              // 0 - 100
+  predictedProbability   Float            // 0.0 - 1.0 (e.g. 0.91 = 91%)
+  expectedValuePaise     Int
+  amountAtRiskPaise      Int
+  recommendedAction      String           // SEND_PAYMENT_REMINDER, CREATE_NEW_PAYMENT_LINK, SEND_PAYMENT_LINK, SEND_FOLLOW_UP, WAIT, ESCALATE_TO_HUMAN, OFFER_ALTERNATIVE_PAYMENT, MARK_LOW_PRIORITY
+  autonomyStatus         String           // COPILOT_PENDING, AUTOPILOT_EXECUTED, HUMAN_APPROVED, HUMAN_REJECTED
+  aiAnalyses             AIAnalysis[]
+  recoveryActions        RecoveryAction[]
+  messages               Message[]
+  recoveredAt            DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+}
+
+model RecoveryAction {
+  id             String       @id @default(uuid())
+  recoveryCaseId String
+  recoveryCase   RecoveryCase @relation(fields: [recoveryCaseId], references: [id], onDelete: Cascade)
+  actionType     String       // REMINDER_SENT, PAYMENT_LINK_CREATED, HUMAN_ESCALATED, WAIT_SCHEDULED, DISCOUNT_OFFERED
+  status         String       // PENDING, EXECUTED, FAILED
+  executedBy     String       // AI_AUTOPILOT, HUMAN_USER
+  executedAt     DateTime?
+  resultStatus   String?      // RECOVERED, NO_RESPONSE, CLICKED
+  messageId      String?
+  detailsJson    String?
+  createdAt      DateTime     @default(now())
+}
+
+model AIAnalysis {
+  id                   String       @id @default(uuid())
+  recoveryCaseId       String
+  recoveryCase         RecoveryCase @relation(fields: [recoveryCaseId], references: [id], onDelete: Cascade)
+  customerReasoning    String       // "Why this customer?"
+  actionReasoning      String       // "Why this action?"
+  scoreBreakdownJson   String       // Detailed breakdown of score factors
+  confidence           Int          // 0-100
+  suggestedChannel     String       // WHATSAPP, EMAIL, SMS
+  generatedMessageText String
+  createdAt            DateTime     @default(now())
+}
+
+model Message {
+  id              String        @id @default(uuid())
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  recoveryCaseId  String?
+  recoveryCase    RecoveryCase? @relation(fields: [recoveryCaseId], references: [id], onDelete: SetNull)
+  channel         String        // WHATSAPP, EMAIL, SMS
+  content         String
+  personalizedFor String
+  confidence      Int           @default(90)
+  status          String        // QUEUED, SENT, DELIVERED, CLICKED, RECOVERED, FAILED
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  clickedAt       DateTime?
+  createdAt       DateTime      @default(now())
+}
+
+model Campaign {
+  id                  String   @id @default(uuid())
+  merchantId          String
+  merchant            Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name                String
+  type                String   // FAILED_PAYMENT, EXPIRED_LINK, ABANDONED_PAYMENT, HIGH_VALUE, REPEAT_CUSTOMER
+  targetCount         Int      @default(0)
+  revenueAtRiskPaise  Int      @default(0)
+  recoveredRevenuePaise Int    @default(0)
+  messagesSent        Int      @default(0)
+  recoveryRate        Float    @default(0.0)
+  status              String   // ACTIVE, COMPLETED, DRAFT
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model WebhookEvent {
+  id                String       @id @default(uuid())
+  merchantId        String
+  merchant          Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  eventId           String       @unique // Razorpay event ID for idempotency
+  eventType         String       // payment_link.paid, payment.failed, etc.
+  transactionId     String?
+  transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  rawPayload        String
+  signatureValid    Boolean      @default(true)
+  idempotencyStatus String       // PROCESSED, DUPLICATE_IGNORED, FAILED
+  processedAt       DateTime     @default(now())
+}
+
+model AgentActivity {
+  id          String   @id @default(uuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  eventType   String   // DETECTION, SCORING, DECISION, ACTION_EXECUTION, RECOVERY_SUCCESS
+  description String
+  amountPaise Int?
+  status      String   // INFO, SUCCESS, WARNING
+  timestamp   DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  actor       String   // AI_AGENT, USER_SHREY, SYSTEM
+  action      String
+  details     String
+  timestamp   DateTime @default(now())
+}

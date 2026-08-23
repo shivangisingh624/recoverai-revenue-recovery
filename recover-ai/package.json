@@ -1,0 +1,17 @@
+{
+  "name": "recover-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RecoverAI - Autonomous AI Revenue Recovery Agent for Razorpay",
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "setup": "cd server && npm install && npx prisma db push && npm run seed && cd ../client && npm install",
+    "seed": "cd server && npm run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
